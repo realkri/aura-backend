@@ -491,60 +491,6 @@ async def judge_photo(request: Request, photo: UploadFile = File(...)):
 # BATTLE JUDGE
 # ============================================================
 @app.post("/api/judge/battle")
-async def judge_battle_route(request: Request, photo: UploadFile = File(...)):
-user = await get_optional_user(request)
-    if photo.content_type not in ["image/jpeg", "image/png", "image/webp"]:
-        raise HTTPException(400, "Unsupported file type")
-    contents = await photo.read()
-    if len(contents) > 10 * 1024 * 1024:
-        raise HTTPException(400, "Image too large")
-
-    ext = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}[photo.content_type]
-    filename = f"{uuid.uuid4().hex}.{ext}"
-    with open(UPLOAD_DIR / filename, "wb") as f:
-        f.write(contents)
-
-    image_b64 = base64.b64encode(contents).decode()
-    verdict = await judge_image(image_b64)
-
-    aura_score = max(0, min(100, verdict.get("aura_score", 50)))
-    cringe_score = max(0, min(100, verdict.get("cringe_score", 20)))
-
-    vid = str(uuid.uuid4())
-    doc = {
-        "id": vid,
-        "mode": "photo",
-        "image_name": filename,
-        "image_url": f"/api/uploads/{filename}",
-        "aura_score": aura_score,
-        "cringe_score": cringe_score,
-        "net_score": aura_score - cringe_score,
-        "verdict_line": verdict.get("verdict_line", "mid energy")[:200],
-        "reasoning": verdict.get("reasoning", "")[:1000],
-        "photo_tier": verdict.get("tier", "PRIME"),
-        "user_id": user["id"] if user else None,
-        "user_handle": user["handle"] if user else "anon",
-        "created_at": datetime.now(timezone.utc).isoformat()
-    }
-    await db_insert("verdicts", doc)
-
-    if user:
-        await db_update_one("users", {"id": user["id"]}, {
-            "$inc": {"lifetime_aura": aura_score, "lifetime_cringe": cringe_score, "verdicts_count": 1}
-        })
-
-    result = dict(doc)
-    if user:
-        updated_user = await db_find_one("users", {"id": user["id"]})
-        if updated_user:
-            tier_info = get_user_tier(updated_user.get("lifetime_aura", 0))
-            result["user_tier"] = tier_info
-    return result
-
-# ============================================================
-# BATTLE JUDGE
-# ============================================================
-@app.post("/api/judge/battle")
 async def judge_battle_route(request: Request, photo_a: UploadFile = File(...), photo_b: UploadFile = File(...)):
     user = await get_optional_user(request)
     for photo in [photo_a, photo_b]:
